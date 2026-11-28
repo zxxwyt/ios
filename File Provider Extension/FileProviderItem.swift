@@ -22,7 +22,11 @@ class FileProviderItem: NSObject, NSFileProviderItem {
     }
     var capabilities: NSFileProviderItemCapabilities {
         if metadata.directory {
-            return [ .allowsAddingSubItems, .allowsContentEnumerating, .allowsReading, .allowsDeleting, .allowsRenaming ]
+            var capabilities: NSFileProviderItemCapabilities = [.allowsAddingSubItems, .allowsContentEnumerating, .allowsReading, .allowsDeleting, .allowsRenaming]
+            if NCMetadataPermissions.canReparentDirectory(metadata, isRoot: itemIdentifier == .rootContainer) {
+                capabilities.insert(.allowsReparenting)
+            }
+            return capabilities
         } else if metadata.lock {
             return [ .allowsReading ]
         }

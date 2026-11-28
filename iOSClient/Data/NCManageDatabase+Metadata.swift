@@ -342,6 +342,18 @@ extension tableMetadata {
         tags.map(\.name)
     }
 
+    func updateLocation(parentURL: String, fullURL: String) {
+        let oldPath = path.dropLast()
+        if path.hasSuffix("/"), serverUrl.hasSuffix(oldPath) {
+            let base = serverUrl.dropLast(oldPath.count)
+            if parentURL.hasPrefix(base + "/") {
+                path = String(parentURL.dropFirst(base.count)) + "/"
+            }
+        }
+        serverUrl = parentURL
+        serverUrlFileName = fullURL
+    }
+
     /// Returns false if the user is lokced out of the file. I.e. The file is locked but by somone else
     func canUnlock(as user: String) -> Bool {
         return !lock || (lockOwner == user && lockOwnerType == 0)
@@ -874,7 +886,8 @@ extension NCManageDatabase {
             if let result = realm.objects(tableMetadata.self)
                 .filter("ocId == %@", ocId)
                 .first {
-                result.serverUrl = serverUrlTo
+                let fullURL = NCUtilityFileSystem().createServerUrl(serverUrl: serverUrlTo, fileName: result.fileName)
+                result.updateLocation(parentURL: serverUrlTo, fullURL: fullURL)
             }
         }
     }

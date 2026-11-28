@@ -206,24 +206,39 @@ extension NCManageDatabase {
         }
     }
 
-    /// Asynchronously renames a directory by updating its `serverUrl`.
-    ///
-    /// This function performs the following steps inside a Realm write transaction:
-    /// 1. Retrieves the first `tableDirectory` object matching the given `ocId`.
-    /// 2. If found, updates the `serverUrl` property of the directory with the provided value.
-    /// 3. Persists the change in the database.
-    ///
-    /// - Parameters:
-    ///   - ocId: The unique object identifier (`ocId`) of the directory to rename.
-    ///   - serverUrl: The new server URL to assign to the directory.
-    /// - Note: The operation is performed asynchronously and thread-safely within `performRealmWriteAsync`.
-    func renameDirectoryAsync(ocId: String, serverUrl: String) async {
+    func moveDirectoryAsync(metadata: tableMetadata, toParentURL: String, newName: String) async {
+        let source = metadata.detachedCopy()
         await core.performRealmWriteAsync { realm in
-            if let result = realm.objects(tableDirectory.self)
-                .filter("ocId == %@", ocId)
-                .first {
-                result.serverUrl = serverUrl
+            Self.moveDirectory(in: realm, metadata: source, toParentURL: toParentURL, newName: newName)
+        }
+    }
+
+    /// Applies a successful WebDAV MOVE to the cached directory and its descendants in one Realm write.
+    static func moveDirectory(in realm: Realm, metadata: tableMetadata, toParentURL: String, newName: String) {
+        let fileSystem = NCUtilityFileSystem()
+        let oldURL = fileSystem.createServerUrl(serverUrl: metadata.serverUrl, fileName: metadata.fileName)
+        let newURL = fileSystem.createServerUrl(serverUrl: toParentURL, fileName: newName)
+        let moved = realm.object(ofType: tableMetadata.self, forPrimaryKey: metadata.ocId) ?? metadata.detachedCopy()
+        guard metadata.directory, moved.account == metadata.account else { return }
+
+        let subtree = NSPredicate(format: "account == %@ AND (serverUrl == %@ OR serverUrl BEGINSWITH %@)", metadata.account, oldURL, oldURL + "/")
+        for directory in realm.objects(tableDirectory.self).filter(subtree) {
+            directory.serverUrl = newURL + directory.serverUrl.dropFirst(oldURL.count)
+        }
+        for child in realm.objects(tableMetadata.self).filter(subtree) {
+            var fullURL = child.serverUrlFileName
+            if fullURL.hasPrefix(oldURL + "/") {
+                fullURL = newURL + fullURL.dropFirst(oldURL.count)
             }
+            child.updateLocation(parentURL: newURL + child.serverUrl.dropFirst(oldURL.count), fullURL: fullURL)
+        }
+        moved.updateLocation(parentURL: toParentURL, fullURL: newURL)
+        if moved.fileName != newName {
+            moved.fileName = newName
+            moved.fileNameView = newName
+        }
+        if moved.realm == nil {
+            realm.add(moved, update: .modified)
         }
     }
 

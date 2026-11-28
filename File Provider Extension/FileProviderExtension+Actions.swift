@@ -96,52 +96,67 @@ extension FileProviderExtension {
 
     override func reparentItem(withIdentifier itemIdentifier: NSFileProviderItemIdentifier, toParentItemWithIdentifier parentItemIdentifier: NSFileProviderItemIdentifier, newName: String?, completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
         Task {
-            guard let itemFrom = try? item(for: itemIdentifier),
-                  let metadataFrom = await fileProviderUtility().getTableMetadataFromItemIdentifierAsync(itemIdentifier) else {
-                completionHandler(nil, NSFileProviderError(.noSuchItem))
-                return
+            let utility = fileProviderUtility()
+            guard let source = await utility.getTableMetadataFromItemIdentifierAsync(itemIdentifier) else {
+                return completionHandler(nil, NSFileProviderError(.noSuchItem))
             }
-            let utilityFileSystem = NCUtilityFileSystem()
-            let ocIdFrom = metadataFrom.ocId
-            let serverUrlFrom = metadataFrom.serverUrl
-            let fileNameFrom = utilityFileSystem.createServerUrl(serverUrl: serverUrlFrom, fileName: itemFrom.filename)
-            let account = metadataFrom.account
-
-            guard let tableDirectoryTo = await fileProviderUtility().getTableDirectoryFromParentItemIdentifierAsync(parentItemIdentifier, account: account, homeServerUrl: utilityFileSystem.getHomeServer(urlBase: metadataFrom.urlBase, userId: metadataFrom.userId)) else {
-                completionHandler(nil, NSFileProviderError(.noSuchItem))
-                return
+            if source.directory && !NCMetadataPermissions.canReparentDirectory(source, isRoot: itemIdentifier == .rootContainer) {
+                return completionHandler(nil, CocoaError(.fileWriteNoPermission))
             }
 
-            let serverUrlTo = tableDirectoryTo.serverUrl
-            var fileNameTo = utilityFileSystem.createServerUrl(serverUrl: serverUrlTo, fileName: itemFrom.filename)
-            if let newName {
-                fileNameTo = utilityFileSystem.createServerUrl(serverUrl: serverUrlTo, fileName: newName)
+            let fileSystem = NCUtilityFileSystem()
+            let homeURL = fileSystem.getHomeServer(urlBase: source.urlBase, userId: source.userId)
+            guard let parent = await utility.getTableDirectoryFromParentItemIdentifierAsync(parentItemIdentifier, account: source.account, homeServerUrl: homeURL),
+                  parent.account == source.account else {
+                return completionHandler(nil, NSFileProviderError(.noSuchItem))
             }
 
-            let resultsMove = await NextcloudKit.shared.moveFileOrFolderAsync(serverUrlFileNameSource: fileNameFrom, serverUrlFileNameDestination: fileNameTo, overwrite: true, account: metadataFrom.account)
+            let name = newName ?? source.fileName
+            guard !name.isEmpty, name != ".", name != "..", !name.contains("/") else {
+                return completionHandler(nil, CocoaError(.fileWriteInvalidFileName))
+            }
+            let sourceURL = fileSystem.createServerUrl(serverUrl: source.serverUrl, fileName: source.fileName)
+            let destinationURL = fileSystem.createServerUrl(serverUrl: parent.serverUrl, fileName: name)
+            if sourceURL == destinationURL {
+                return completionHandler(FileProviderItem(metadata: source, parentItemIdentifier: parentItemIdentifier), nil)
+            }
+            if source.directory && (parent.serverUrl == sourceURL || parent.serverUrl.hasPrefix(sourceURL + "/")) {
+                return completionHandler(nil, CocoaError(.fileWriteInvalidFileName))
+            }
 
-            if resultsMove.error == .success {
-                if metadataFrom.directory {
-                    await NCManageDatabase.shared.deleteDirectoryAndSubDirectoryAsync(serverUrl: serverUrlFrom, account: account)
-                    await NCManageDatabase.shared.renameDirectoryAsync(ocId: ocIdFrom, serverUrl: serverUrlTo)
+            let database = NCManageDatabase.shared
+            let move = await NextcloudKit.shared.moveFileOrFolderAsync(serverUrlFileNameSource: sourceURL, serverUrlFileNameDestination: destinationURL, overwrite: false, account: source.account)
+            guard move.error == .success else {
+                switch move.error.errorCode {
+                case NCGlobal.shared.errorPreconditionFailed:
+                    let predicate = NSPredicate(format: "account == %@ AND serverUrl == %@ AND fileName == %@ AND ocId != %@", source.account, parent.serverUrl, name, source.ocId)
+                    if let existing = await database.getMetadataAsync(predicate: predicate) {
+                        let conflictingItem = FileProviderItem(metadata: existing, parentItemIdentifier: parentItemIdentifier)
+                        return completionHandler(nil, NSError.fileProviderErrorForCollision(with: conflictingItem))
+                    }
+                    return completionHandler(nil, NSFileProviderError(.filenameCollision))
+                case NCGlobal.shared.errorResourceNotFound:
+                    return completionHandler(nil, NSFileProviderError(.noSuchItem))
+                case NCGlobal.shared.errorForbidden:
+                    return completionHandler(nil, CocoaError(.fileWriteNoPermission))
+                default:
+                    return completionHandler(nil, move.error)
                 }
-                await NCManageDatabase.shared.moveMetadataAsync(ocId: ocIdFrom, serverUrlTo: serverUrlTo)
+            }
 
-                guard let metadata = await NCManageDatabase.shared.getMetadataFromOcIdAsync(ocIdFrom) else {
-                    completionHandler(nil, NSFileProviderError(.noSuchItem))
-                    return
-                }
-
-                let item = FileProviderItem(metadata: metadata, parentItemIdentifier: parentItemIdentifier)
-
-                completionHandler(item, nil)
-                return
-
+            if source.directory {
+                await database.moveDirectoryAsync(metadata: source, toParentURL: parent.serverUrl, newName: name)
             } else {
-
-                completionHandler(nil, NSFileProviderError(.noSuchItem, userInfo: [NSLocalizedDescriptionKey: resultsMove.error.localizedGenericMessage, NSLocalizedFailureReasonErrorKey: ""]))
-                return
+                if name != source.fileName {
+                    await database.renameMetadata(fileNameNew: name, ocId: source.ocId, status: source.status)
+                }
+                await database.moveMetadataAsync(ocId: source.ocId, serverUrlTo: parent.serverUrl)
             }
+            guard let moved = await database.getMetadataFromOcIdAsync(source.ocId),
+                  moved.serverUrlFileName == destinationURL else {
+                return completionHandler(nil, NSFileProviderError(.noSuchItem))
+            }
+            completionHandler(FileProviderItem(metadata: moved, parentItemIdentifier: parentItemIdentifier), nil)
         }
     }
 

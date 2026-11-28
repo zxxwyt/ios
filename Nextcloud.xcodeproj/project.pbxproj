@@ -166,6 +166,7 @@
 		C7724CB38D2A7B4B98CA1AFA /* NCLoginServerErrorClassifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2A4CC67E2712B70FCFC090 /* NCLoginServerErrorClassifierTests.swift */; };
 		4463A0C1300D000100A00004 /* NCAutoUploadKnownFilesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4463A0C1300D000100A00003 /* NCAutoUploadKnownFilesTests.swift */; };
 		4E3A0C13000D000100A00012 /* NCReceivedShareRootTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3A0C13000D000100A00011 /* NCReceivedShareRootTests.swift */; };
+		568CCF56214C4B368FDB2208 /* NCFileProviderMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95E72B5B8BB44B249B570318 /* NCFileProviderMoveTests.swift */; };
 		4437B0C1300D000100A00002 /* NCBackupExclusionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4437B0C1300D000100A00001 /* NCBackupExclusionTests.swift */; };
 		CB3666201AF7550816B5CD6A /* NCContextMenuComment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8932E90EC4278026D86CCCC9 /* NCContextMenuComment.swift */; };
 		D56DFFE5D5014F66A7C9FED0 /* PasscodeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC6C501EF1104A6A8569D9C1 /* PasscodeUITests.swift */; };
@@ -254,6 +255,8 @@
 		F3F442F02DDE2A7700FD701F /* NCMetadataPermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F442ED2DDE292600FD701F /* NCMetadataPermissions.swift */; };
 		F3F442F12DDE2A7700FD701F /* NCMetadataPermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F442ED2DDE292600FD701F /* NCMetadataPermissions.swift */; };
 		F3F442F42DDE2A7700FD701F /* NCMetadataPermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F442ED2DDE292600FD701F /* NCMetadataPermissions.swift */; };
+		F3F442F52DDE2A7700FD701F /* NCMetadataPermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F442ED2DDE292600FD701F /* NCMetadataPermissions.swift */; };
+		F3F442F62DDE2A7700FD701F /* NCMetadataPermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F442ED2DDE292600FD701F /* NCMetadataPermissions.swift */; };
 		F700222C1EC479840080073F /* Custom.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F700222B1EC479840080073F /* Custom.xcassets */; };
 		F700222D1EC479840080073F /* Custom.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F700222B1EC479840080073F /* Custom.xcassets */; };
 		F700510122DF63AC003A3356 /* NCShare.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F700510022DF63AC003A3356 /* NCShare.storyboard */; };
@@ -1469,6 +1472,7 @@
 		C4A84566BEF80733CC99BA52 /* NCAccountSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NCAccountSetupView.swift; sourceTree = "<group>"; };
 		4463A0C1300D000100A00003 /* NCAutoUploadKnownFilesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NCAutoUploadKnownFilesTests.swift; sourceTree = "<group>"; };
 		4E3A0C13000D000100A00011 /* NCReceivedShareRootTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NCReceivedShareRootTests.swift; sourceTree = "<group>"; };
+		95E72B5B8BB44B249B570318 /* NCFileProviderMoveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NCFileProviderMoveTests.swift; sourceTree = "<group>"; };
 		4437B0C1300D000100A00001 /* NCBackupExclusionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NCBackupExclusionTests.swift; sourceTree = "<group>"; };
 		CE0CD9A00D74B01055F238E9 /* NCErrorContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NCErrorContext.swift; sourceTree = "<group>"; };
 		CE2A4CC67E2712B70FCFC090 /* NCLoginServerErrorClassifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NCLoginServerErrorClassifierTests.swift; sourceTree = "<group>"; };
@@ -2328,6 +2332,7 @@
 				4463A0C1300D000100A00003 /* NCAutoUploadKnownFilesTests.swift */,
 				4437B0C1300D000100A00001 /* NCBackupExclusionTests.swift */,
 				4E3A0C13000D000100A00011 /* NCReceivedShareRootTests.swift */,
+				95E72B5B8BB44B249B570318 /* NCFileProviderMoveTests.swift */,
 				4E3A0C13000D000100A00005 /* NCMenuPresentationMonitorTests.swift */,
 				320C20803A58DAF7575440A8 /* NKErrorUserFriendlyMessageTests.swift */,
 				C0DEA070306D000100000007 /* NCAutoUploadAssetTests.swift */,
@@ -4711,6 +4716,7 @@
 				4463A0C1300D000100A00004 /* NCAutoUploadKnownFilesTests.swift in Sources */,
 				4437B0C1300D000100A00002 /* NCBackupExclusionTests.swift in Sources */,
 				4E3A0C13000D000100A00012 /* NCReceivedShareRootTests.swift in Sources */,
+				568CCF56214C4B368FDB2208 /* NCFileProviderMoveTests.swift in Sources */,
 				4E3A0C13000D000100A00006 /* NCMenuPresentationMonitorTests.swift in Sources */,
 				C0DEA070306D000100000008 /* NCAutoUploadAssetTests.swift in Sources */,
 				F76BED7E306D0000002E1442 /* NCPhotoLibraryAssetTests.swift in Sources */,
@@ -4792,6 +4798,7 @@
 				F763410B2EBDFCB10056F538 /* NCManageDatabase+CreateMetadata.swift in Sources */,
 				F7490E6B29882A92009DCE94 /* NCGlobal.swift in Sources */,
 				F763413E2EBE5DC00056F538 /* FileProviderItem.swift in Sources */,
+				F3F442F52DDE2A7700FD701F /* NCMetadataPermissions.swift in Sources */,
 				F7490E8729882CA8009DCE94 /* ThreadSafeDictionary.swift in Sources */,
 				F7E742FA2EC0A5BC00E2362A /* NCManageDatabase+Metadata.swift in Sources */,
 				F7E742FC2EC0A5FD00E2362A /* NCManageDatabase+Metadata+Session.swift in Sources */,
@@ -5006,6 +5013,7 @@
 				F760A48F2FE95D06001B212E /* NCTransferDelegateDispatcher.swift in Sources */,
 				F7D61EAB2EBF16B6007F865B /* NCManageDatabase+TableCapabilities.swift in Sources */,
 				F771E3D520E2392D00AFB62D /* FileProviderItem.swift in Sources */,
+				F3F442F62DDE2A7700FD701F /* NCMetadataPermissions.swift in Sources */,
 				F3E173C42C9B1067006D177A /* AwakeMode.swift in Sources */,
 				F7D61E932EBF1366007F865B /* UIColor+Extension.swift in Sources */,
 				F76340F42EBDE9760056F538 /* NCManageDatabaseCore.swift in Sources */,

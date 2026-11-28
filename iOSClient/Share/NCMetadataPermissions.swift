@@ -36,6 +36,10 @@ enum NCMetadataPermissions {
         return metadata.permissions.contains(permissionCanMove)
     }
 
+    static func canReparentDirectory(_ metadata: tableMetadata, isRoot: Bool) -> Bool {
+        metadata.directory && !isRoot && !metadata.lock && canMoveAndDelete(metadata)
+    }
+
     /// Whether an item is the top of a share received from another user.
     ///
     /// The server marks every item inside a received share with `S`, so the top of the
