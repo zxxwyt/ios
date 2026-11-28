@@ -116,16 +116,11 @@ class FileProviderItem: NSObject, NSFileProviderItem {
     var tagData: Data? {
         return nil
     }
-    var favoriteRank: NSNumber? {
-        if let rank = FileProviderData.shared.listFavoriteIdentifierRank[metadata.ocId] {
-            return rank
-        } else {
-            return nil
-        }
-    }
+    let favoriteRank: NSNumber?
 
     init(metadata: tableMetadata, parentItemIdentifier: NSFileProviderItemIdentifier) {
         self.metadata = metadata.detachedCopy()
+        self.favoriteRank = FileProviderFavoriteRanks.shared.rank(for: metadata)
         if metadata.ocId == "root" {
             self.parentItemIdentifier = .rootContainer
         } else {

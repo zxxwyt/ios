@@ -189,58 +189,62 @@ extension FileProviderExtension {
     }
 
     override func setFavoriteRank(_ favoriteRank: NSNumber?, forItemIdentifier itemIdentifier: NSFileProviderItemIdentifier, completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
-        Task {
-            guard let metadata = await fileProviderUtility().getTableMetadataFromItemIdentifierAsync(itemIdentifier) else {
-                completionHandler(nil, NSFileProviderError(.noSuchItem))
-                return
-            }
-            var favorite = false
-            let ocId = metadata.ocId
-
-            if favoriteRank == nil {
-                FileProviderData.shared.listFavoriteIdentifierRank.removeValue(forKey: itemIdentifier.rawValue)
-            } else {
-                if FileProviderData.shared.listFavoriteIdentifierRank[itemIdentifier.rawValue] == nil {
-                    FileProviderData.shared.listFavoriteIdentifierRank[itemIdentifier.rawValue] = favoriteRank
-                }
-                favorite = true
-            }
-
-            if (favorite == true && !metadata.favorite) || (!favorite && metadata.favorite) {
-                let fileNamePath = NCUtilityFileSystem().getRelativeFilePath(metadata.fileName, serverUrl: metadata.serverUrl, urlBase: metadata.urlBase, userId: metadata.userId)
-                let resultsFavorite = await  NextcloudKit.shared.setFavoriteAsync(fileName: fileNamePath, favorite: favorite, account: metadata.account)
-
-                if resultsFavorite.error == .success {
-                    guard let metadata = await NCManageDatabase.shared.getMetadataFromOcIdAsync(ocId) else {
-                        completionHandler(nil, NSFileProviderError(.noSuchItem))
-                        return
+        favoriteUpdates.withLock { pending in
+            let previous = pending
+            pending = Task {
+                await previous?.value
+                do {
+                    let (item, changed) = try await updateFavoriteRank(favoriteRank, for: itemIdentifier)
+                    if changed {
+                        FileProviderData.shared.withWorkingSet(account: item.metadata.account) { changes in
+                            changes.record(item, for: itemIdentifier)
+                        }
                     }
-
-                    // Change DB
-                    metadata.favorite = favorite
-                    await NCManageDatabase.shared.addMetadataAsync(metadata)
-
-                    let item = await FileProviderData.shared.signalEnumerator(ocId: metadata.ocId, type: .workingSet)
-
                     completionHandler(item, nil)
-                    return
-
-                } else {
-                    guard let metadata = await NCManageDatabase.shared.getMetadataFromOcIdAsync(ocId) else {
-                        completionHandler(nil, NSFileProviderError(.noSuchItem))
-                        return
+                    if changed {
+                        Task { await FileProviderData.shared.signalWorkingSet(domain: self.domain) }
                     }
-
-                    // Errore, remove from listFavoriteIdentifierRank
-                    FileProviderData.shared.listFavoriteIdentifierRank.removeValue(forKey: itemIdentifier.rawValue)
-
-                    let item = await FileProviderData.shared.signalEnumerator(ocId: metadata.ocId, type: .workingSet)
-
-                    completionHandler(item, NSFileProviderError(.serverUnreachable))
-                    return
+                } catch {
+                    completionHandler(nil, error)
                 }
             }
         }
+    }
+
+    private func updateFavoriteRank(_ rank: NSNumber?, for identifier: NSFileProviderItemIdentifier) async throws -> (item: FileProviderItem, changed: Bool) {
+        let session = try prepareSession()
+        let utility = fileProviderUtility()
+        guard let metadata = await utility.getTableMetadataFromItemIdentifierAsync(identifier),
+              metadata.account == session.account, metadata.directory,
+              let parent = await utility.getParentItemIdentifierAsync(metadata: metadata) else {
+            throw NSFileProviderError(.noSuchItem)
+        }
+
+        let favorite = rank != nil
+        let ranks = FileProviderFavoriteRanks.shared
+        if metadata.favorite == favorite, ranks.rank(for: metadata) == rank {
+            if rank == nil { ranks.set(nil, for: metadata) }
+            return (FileProviderItem(metadata: metadata, parentItemIdentifier: parent), false)
+        }
+        if metadata.favorite != favorite {
+            guard metadata.status == NCGlobal.shared.metadataStatusNormal else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            let path = NCUtilityFileSystem().getRelativeFilePath(metadata.fileName, serverUrl: metadata.serverUrl, session: session)
+            let result = await NextcloudKit.shared.setFavoriteAsync(fileName: path, favorite: favorite, account: session.account)
+            guard result.error == .success else {
+                throw NSFileProviderError(.serverUnreachable)
+            }
+            await NCManageDatabase.shared.setMetadataFavoriteAsync(ocId: metadata.ocId, favorite: favorite, account: session.account)
+            guard let current = await utility.getTableMetadataFromItemIdentifierAsync(identifier),
+                  current.account == session.account, current.favorite == favorite else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+        }
+
+        ranks.set(rank, for: metadata)
+        metadata.favorite = favorite
+        return (FileProviderItem(metadata: metadata, parentItemIdentifier: parent), true)
     }
 
     override func setTagData(_ tagData: Data?, forItemIdentifier itemIdentifier: NSFileProviderItemIdentifier, completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {

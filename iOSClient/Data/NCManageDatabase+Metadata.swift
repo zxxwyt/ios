@@ -891,11 +891,12 @@ extension NCManageDatabase {
     /// Asynchronously sets the favorite status of a `tableMetadata` entry.
     /// Passing a sync status also updates the saved previous flag and the session date.
     /// Without a sync status, only idle entries can be updated.
-    func setMetadataFavoriteAsync(ocId: String, favorite: Bool?, saveOldFavorite: String? = nil, status: Int? = nil) async {
+    func setMetadataFavoriteAsync(ocId: String, favorite: Bool?, saveOldFavorite: String? = nil, status: Int? = nil, account: String? = nil) async {
         await core.performRealmWriteAsync { realm in
             guard let result = realm.objects(tableMetadata.self)
                 .filter("ocId == %@", ocId)
                 .first,
+                account == nil || result.account == account,
                 status != nil || result.status == NCGlobal.shared.metadataStatusNormal else {
                 return
             }
@@ -1366,25 +1367,6 @@ extension NCManageDatabase {
                                                   account,
                                                   serverUrl,
                                                   fileNameConflict))
-    }
-
-    func getTableMetadatasDirectoryFavoriteIdentifierRankAsync(account: String) async -> [String: NSNumber] {
-        let result = await core.performRealmReadAsync { realm in
-            var listIdentifierRank: [String: NSNumber] = [:]
-            var counter = Int64(10)
-
-            let results = realm.objects(tableMetadata.self)
-                .filter("account == %@ AND directory == true AND favorite == true", account)
-                .sorted(byKeyPath: "fileNameView", ascending: true)
-
-            results.forEach { item in
-                counter += 1
-                listIdentifierRank[item.ocId] = NSNumber(value: counter)
-            }
-
-            return listIdentifierRank
-        }
-        return result ?? [:]
     }
 
 #if !EXTENSION

@@ -8,53 +8,63 @@ import FileProvider
 import NextcloudKit
 import Alamofire
 import RealmSwift
+import os
 
 final class FileProviderExtension: NSFileProviderExtension {
-    override func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier) throws -> NSFileProviderEnumerator {
-        // Skip authentication checks for the working set container
-        if containerItemIdentifier != .workingSet {
-            let versionApp = fileProviderUtility().getVersionMaintenance()
+    let favoriteUpdates = OSAllocatedUnfairLock(initialState: Task<Void, Never>?.none)
 
-            // Verify / Open REALM
-            guard let url = NCManageDatabase.shared.databaseURL,
-                  let version = try? schemaVersionAtURL(url),
-                  version == databaseSchemaVersion else {
+    override func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier) throws -> NSFileProviderEnumerator {
+        let session = try prepareSession()
+        return FileProviderEnumerator(enumeratedItemIdentifier: containerItemIdentifier, session: session)
+    }
+
+    func prepareSession(forLocalLookup: Bool = false) throws -> NCSession.Session {
+        let versionApp = fileProviderUtility().getVersionMaintenance()
+
+        // Verify / Open REALM
+        guard let url = NCManageDatabase.shared.databaseURL else {
+            throw NSFileProviderError(.notAuthenticated)
+        }
+        let needsOpening = Realm.Configuration.defaultConfiguration.fileURL != url
+        if needsOpening || !forLocalLookup {
+            guard let version = try? schemaVersionAtURL(url), version == databaseSchemaVersion else {
                 throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.notAuthenticated.rawValue, userInfo: ["code": NSNumber(value: NCGlobal.shared.errorVersionMismatch)])
             }
+        }
+        if needsOpening {
             NCManageDatabase.shared.openRealm()
+        }
 
-            // Verify version
-            if let groupDefaults = UserDefaults(suiteName: NCBrandOptions.shared.capabilitiesGroup) {
-                let lastVersion = groupDefaults.string(forKey: NCGlobal.shared.udLastVersion)
-                if lastVersion != versionApp {
-                    throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.notAuthenticated.rawValue, userInfo: ["code": NSNumber(value: NCGlobal.shared.errorVersionMismatch)])
-                }
-            }
-
-            // Ensure a valid account is configured for the extension
-            guard FileProviderData.shared.setupAccount(domain: self.domain, providerExtension: self) != nil else {
-                throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.notAuthenticated.rawValue, userInfo: [:])
-            }
-
-            // Check if passcode protection is enabled and required
-            if NCPreferences().passcode != nil, NCPreferences().requestPasscodeAtStart {
-                throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.notAuthenticated.rawValue, userInfo: ["code": NSNumber(value: NCGlobal.shared.errorUnauthorizedFilesPasscode)])
-            }
-
-            // Check if Files app access is disabled by branding options
-            if NCPreferences().disableFilesApp || NCBrandOptions.shared.disable_openin_file {
-                throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.notAuthenticated.rawValue, userInfo: ["code": NSNumber(value: NCGlobal.shared.errorDisableFilesApp)])
+        // Verify version
+        if let groupDefaults = UserDefaults(suiteName: NCBrandOptions.shared.capabilitiesGroup) {
+            let lastVersion = groupDefaults.string(forKey: NCGlobal.shared.udLastVersion)
+            if lastVersion != versionApp {
+                throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.notAuthenticated.rawValue, userInfo: ["code": NSNumber(value: NCGlobal.shared.errorVersionMismatch)])
             }
         }
 
-        // Return the enumerator for the requested container
-        return FileProviderEnumerator(enumeratedItemIdentifier: containerItemIdentifier)
+        // Check if passcode protection is enabled and required
+        let preferences = NCPreferences()
+        if preferences.passcode != nil, preferences.requestPasscodeAtStart {
+            throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.notAuthenticated.rawValue, userInfo: ["code": NSNumber(value: NCGlobal.shared.errorUnauthorizedFilesPasscode)])
+        }
+
+        // Check if Files app access is disabled by branding options
+        if preferences.disableFilesApp || NCBrandOptions.shared.disable_openin_file {
+            throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.notAuthenticated.rawValue, userInfo: ["code": NSNumber(value: NCGlobal.shared.errorDisableFilesApp)])
+        }
+
+        guard let session = FileProviderData.shared.setupAccount(domain: domain, forLocalLookup: forLocalLookup) else {
+            throw NSFileProviderError(.notAuthenticated)
+        }
+        return session
     }
 
     // MARK: - Item
 
     override func item(for identifier: NSFileProviderItemIdentifier) throws -> NSFileProviderItem {
-        if identifier == .rootContainer, let session = FileProviderData.shared.session {
+        let session = try prepareSession(forLocalLookup: true)
+        if identifier == .rootContainer {
             let metadata = NCManageDatabaseCreateMetadata().createMetadataDirectory(
                 fileName: NextcloudKit.shared.nkCommonInstance.rootFileName,
                 ocId: NSFileProviderItemIdentifier.rootContainer.rawValue,
@@ -65,6 +75,7 @@ final class FileProviderExtension: NSFileProviderExtension {
         } else {
             let fileProviderUtility = fileProviderUtility()
             guard let metadata = fileProviderUtility.getTableMetadataFromItemIdentifier(identifier),
+                  metadata.account == session.account,
                   let parentItemIdentifier = fileProviderUtility.getParentItemIdentifier(metadata: metadata) else {
                 throw NSFileProviderError(.noSuchItem)
             }
@@ -74,9 +85,8 @@ final class FileProviderExtension: NSFileProviderExtension {
     }
 
     override func urlForItem(withPersistentIdentifier identifier: NSFileProviderItemIdentifier) -> URL? {
-        guard let session = FileProviderData.shared.session,
-              let item = try? item(for: identifier),
-              let rootURL = fileProviderUtility().getDocumentStorageURL(for: domain, userId: session.userId, urlBase: session.urlBase) else {
+        guard let item = try? item(for: identifier) as? FileProviderItem,
+              let rootURL = fileProviderUtility().getDocumentStorageURL(for: domain, userId: item.metadata.userId, urlBase: item.metadata.urlBase) else {
             return nil
         }
 

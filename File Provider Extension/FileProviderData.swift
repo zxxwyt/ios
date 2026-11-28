@@ -13,11 +13,16 @@ class FileProviderData: NSObject {
     var session: NCSession.Session?
     private var isPaginated: Bool?
 
-    var listFavoriteIdentifierRank: [String: NSNumber] = [:]
     var fileProviderSignalDeleteContainerItemIdentifier: [NSFileProviderItemIdentifier: NSFileProviderItemIdentifier] = [:]
     var fileProviderSignalUpdateContainerItem: [NSFileProviderItemIdentifier: FileProviderItem] = [:]
-    var fileProviderSignalDeleteWorkingSetItemIdentifier: [NSFileProviderItemIdentifier: NSFileProviderItemIdentifier] = [:]
-    var fileProviderSignalUpdateWorkingSetItem: [NSFileProviderItemIdentifier: FileProviderItem] = [:]
+    private let workingSetLock = NSLock()
+    private var workingSets: [String: FileProviderWorkingSetChanges<FileProviderItem>] = [:]
+
+    func withWorkingSet<T>(account: String, _ body: (inout FileProviderWorkingSetChanges<FileProviderItem>) -> T) -> T {
+        workingSetLock.withLock {
+            body(&workingSets[account, default: FileProviderWorkingSetChanges()])
+        }
+    }
 
     var downloadPendingCompletionHandlers: [Int: (Error?) -> Void] = [:]
 
@@ -36,27 +41,18 @@ class FileProviderData: NSObject {
 
     @discardableResult
     func setupAccount(domain: NSFileProviderDomain? = nil,
-                      tblAccount: tableAccount? = nil,
-                      providerExtension: NSFileProviderExtension) -> tableAccount? {
-        let version = NSString(format: NCBrandOptions.shared.textCopyrightNextcloudiOS as NSString, fileProviderUtility().getVersionBuild()) as String
-        let tblAccounts = NCManageDatabase.shared.getAllTableAccount()
+                      forLocalLookup: Bool = false) -> NCSession.Session? {
         var matchAccount: tableAccount?
 
-        NextcloudKit.configureLogger(
-            logLevel: NCBrandOptions.shared.disable_log ? .disabled : NCPreferences().log,
-            logDirectory: NCPreferences.sharedLogDirectory
-        )
-
         if let domain {
-            self.domain = domain
             // Match the domain identifier with one of the stored accounts
-            matchAccount = tblAccounts.first(where: {
+            matchAccount = NCManageDatabase.shared.getAllTableAccount().first(where: {
                 guard let urlBase = NSURL(string: $0.urlBase), let host = urlBase.host else {
                     return false
                 }
                 let accountDomain = "\($0.userId) (\(host))"
                 return accountDomain == domain.identifier.rawValue
-            }) ?? NCManageDatabase.shared.getActiveTableAccount()
+            })
         } else {
             matchAccount = NCManageDatabase.shared.getActiveTableAccount()
         }
@@ -64,11 +60,20 @@ class FileProviderData: NSObject {
         guard let matchAccount else {
             return nil
         }
-        self.session = NCSession.Session(account: matchAccount.account,
-                                         urlBase: matchAccount.urlBase,
-                                         user: matchAccount.user,
-                                         userId: matchAccount.userId)
+        let session = NCSession.Session(account: matchAccount.account,
+                                        urlBase: matchAccount.urlBase,
+                                        user: matchAccount.user,
+                                        userId: matchAccount.userId)
+        if forLocalLookup { return session }
+        self.session = session
+        self.domain = domain
 
+        NextcloudKit.configureLogger(
+            logLevel: NCBrandOptions.shared.disable_log ? .disabled : NCPreferences().log,
+            logDirectory: NCPreferences.sharedLogDirectory
+        )
+
+        let version = NSString(format: NCBrandOptions.shared.textCopyrightNextcloudiOS as NSString, fileProviderUtility().getVersionBuild()) as String
         nkLog(start: "Start File Provider session " + version + " (File Provider Extension) with account: \(matchAccount.account)")
 
         // NextcloudKit Session
@@ -84,7 +89,7 @@ class FileProviderData: NSObject {
                                           httpMaximumConnectionsPerHostInUpload: NCBrandOptions.shared.httpMaximumConnectionsPerHostInUpload,
                                           groupIdentifier: NCBrandOptions.shared.capabilitiesGroup)
 
-        return matchAccount
+        return session
     }
 
     // Get capabilities -> Paginate is availible from NC server 32.0.2
@@ -104,26 +109,25 @@ class FileProviderData: NSObject {
 
     @discardableResult
     func signalEnumerator(ocId: String, type: TypeSignal) async -> FileProviderItem? {
+        let domain = self.domain
         guard let metadata = await NCManageDatabase.shared.getMetadataFromOcIdAsync(ocId),
               let parentItemIdentifier = await fileProviderUtility().getParentItemIdentifierAsync(metadata: metadata) else {
             return nil
         }
         let item = FileProviderItem(metadata: metadata, parentItemIdentifier: parentItemIdentifier)
 
+        withWorkingSet(account: metadata.account) { changes in
+            changes.record(type == .delete ? nil : item, for: item.itemIdentifier)
+        }
         if type == .delete {
             fileProviderSignalDeleteContainerItemIdentifier[item.itemIdentifier] = item.itemIdentifier
-            fileProviderSignalDeleteWorkingSetItemIdentifier[item.itemIdentifier] = item.itemIdentifier
         }
         if type == .update {
             fileProviderSignalUpdateContainerItem[item.itemIdentifier] = item
-            fileProviderSignalUpdateWorkingSetItem[item.itemIdentifier] = item
-        }
-        if type == .workingSet {
-            fileProviderSignalUpdateWorkingSetItem[item.itemIdentifier] = item
         }
         if type == .delete || type == .update {
             do {
-                if let domain = self.domain {
+                if let domain {
                     try await NSFileProviderManager(for: domain)?.signalEnumerator(for: parentItemIdentifier)
                 } else {
                     try await NSFileProviderManager.default.signalEnumerator(for: parentItemIdentifier)
@@ -133,6 +137,11 @@ class FileProviderData: NSObject {
             }
         }
 
+        await signalWorkingSet(domain: domain)
+        return item
+    }
+
+    func signalWorkingSet(domain: NSFileProviderDomain?) async {
         do {
             if let domain {
                 try await NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet)
@@ -142,8 +151,6 @@ class FileProviderData: NSObject {
         } catch {
             print(error)
         }
-
-        return item
     }
 
     // MARK: - DOWNLOAD
